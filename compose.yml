@@ -1,0 +1,14 @@
+services:
+    postgres:
+        image: pgvector/pgvector:pg17
+        container_name: postgres_ia
+        ports:
+            - "5432:5432"
+        environment:
+            POSTGRES_PASSWORD: root
+            POSTGRES_DB: pergunteme_juri
+        volumes:
+            - pergunteme_juri:/var/lib/postgresql/data
+
+volumes:
+    pergunteme_juri:
