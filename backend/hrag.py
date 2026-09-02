@@ -1,0 +1,1 @@
+# Realiza Hybrid searh para encontrar documentos/trechos relevantes para serem providos como contexto para Juri.
