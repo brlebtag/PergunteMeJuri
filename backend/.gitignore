@@ -216,4 +216,5 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-laws/
+leis/
+modelos_cache/
