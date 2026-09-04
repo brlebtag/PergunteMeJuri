@@ -3,6 +3,8 @@ from sqlalchemy import create_engine, text
 
 URL_BANCO = "postgresql+psycopg2://postgres:root@localhost:5432/pergunteme_juri"
 
+LANG="portuguese"
+
 BUILD_TABLES = """
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -29,7 +31,7 @@ CREATE INDEX idx_chunks_embedding ON document_chunks
 
 ALTER TABLE document_chunks
     ADD COLUMN search_vector tsvector
-    GENERATED ALWAYS AS (to_tsvector('portuguese', content)) STORED;
+    GENERATED ALWAYS AS (to_tsvector(:lang, content)) STORED;
 
 CREATE INDEX idx_chunks_search ON document_chunks USING gin(search_vector);
 """
@@ -37,7 +39,7 @@ CREATE INDEX idx_chunks_search ON document_chunks USING gin(search_vector);
 def main() -> None:
     engine = create_engine(URL_BANCO, echo=True)
     with engine.connect() as conn:
-        conn.execute(text(BUILD_TABLES))
+        conn.execute(text(BUILD_TABLES), {"lang": LANG})
         conn.commit()
 
 

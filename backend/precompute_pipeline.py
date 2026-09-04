@@ -19,15 +19,16 @@ PREFIX_QUERY = "query: "
 CHUNK_SIZE = 256
 OVERLAP = 0.15
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modelos_cache")
+DOC_FOLDER= "leis"
 
-def leis_folder() -> Path:
-    return Path(os.path.join(os.path.dirname(os.path.abspath(__file__)), "leis"))
+def docs_folder() -> Path:
+    return Path(os.path.join(os.path.dirname(os.path.abspath(__file__)), DOC_FOLDER))
 
-def lei_file(name: str) -> str:
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "leis", name)
+def doc_file(name: str) -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), DOC_FOLDER, name)
 
-def leis_files() -> List[str]:
-    return [lei_file(f.name) for f in leis_folder().rglob("*.pdf") if f.is_file()]
+def docs_files() -> List[str]:
+    return [doc_file(f.name) for f in docs_folder().rglob("*.pdf") if f.is_file()]
 
 def build_tokenizer():
     return AutoTokenizer.from_pretrained(MODEL, cache_dir=CACHE_DIR)
@@ -90,7 +91,7 @@ def precompute():
     engine = create_engine(URL_BANCO, echo=True)
     model = build_embedding_model()
     with engine.connect() as conn:
-        for file in leis_files():
+        for file in docs_files():
             reader = PdfReader(file)
             doc_id = insert_doc(conn, file)
             if doc_id is None:
