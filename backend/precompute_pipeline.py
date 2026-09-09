@@ -2,7 +2,9 @@
 # https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
 import os
 # import asyncio
+import re
 import hashlib
+import unicodedata
 from typing import TypedDict, Annotated, Any, Optional, List
 import semchunk
 from sqlalchemy.exc import IntegrityError
@@ -27,8 +29,25 @@ def docs_folder() -> Path:
 def doc_file(name: str) -> str:
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), DOC_FOLDER, name)
 
-def docs_files() -> List[str]:
-    return [doc_file(f.name) for f in docs_folder().rglob("*.pdf") if f.is_file()]
+def docs_files() -> List[(str, str)]:
+    return [(f.name, doc_file(f.name)) for f in docs_folder().rglob("*.pdf") if f.is_file()]
+
+# Categorias Unicode descartadas do texto extraido do PDF:
+#   Co = uso privado. Extratores mapeiam glifos de fontes embutidas para essas
+#        faixas (ex.: U+F24E), gerando lixo que nao representa texto nenhum.
+#   Cc = caracteres de controle (menos \n e \t, preservados abaixo).
+CATEGORIAS_LIXO = ("Co", "Cc")
+ESPACOS_RE = re.compile(r"[^\S\n]+")
+
+def limpar_texto(texto: str) -> str:
+    """Remove lixo de extracao de PDF antes do chunking."""
+    texto = unicodedata.normalize("NFKC", texto)
+    texto = "".join(
+        c for c in texto
+        if c in "\n\t" or unicodedata.category(c) not in CATEGORIAS_LIXO
+    )
+    # Colapsa sequencias de espacos sem juntar linhas.
+    return ESPACOS_RE.sub(" ", texto).strip()
 
 def build_tokenizer():
     return AutoTokenizer.from_pretrained(MODEL, cache_dir=CACHE_DIR)
@@ -46,11 +65,11 @@ def search_doc(conn: Connection, absolute_path: str) -> int:
     row = ret.fetchone()
     return row[0] if row else None
 
-def insert_doc(conn: Connection, absolute_path: str) -> int:
+def insert_doc(conn: Connection, name: str, absolute_path: str) -> int:
     try:
-        sql = text("""INSERT INTO documents (absolute_path)
-            VALUES (:absolute_path) RETURNING id;""")
-        data = {"absolute_path": absolute_path}
+        sql = text("""INSERT INTO documents ("name", absolute_path)
+            VALUES (:name, :absolute_path) RETURNING id;""")
+        data = {"name": name, "absolute_path": absolute_path}
         ret = conn.execute(sql, data)
         row = ret.fetchone()
         conn.commit()
@@ -88,16 +107,16 @@ def store_chunk(conn: Connection, model: SentenceTransformer, doc_id: int, chunk
 def precompute():
     tokenizer = build_tokenizer()
     chunker = build_chunker(tokenizer)
-    engine = create_engine(URL_BANCO, echo=True)
+    engine = create_engine(URL_BANCO, echo=os.getenv("SQL_ECHO") == "1")
     model = build_embedding_model()
     with engine.connect() as conn:
-        for file in docs_files():
-            reader = PdfReader(file)
-            doc_id = insert_doc(conn, file)
+        for (name, filename) in docs_files():
+            reader = PdfReader(filename)
+            doc_id = insert_doc(conn, name.replace(".pdf", ""), filename)
             if doc_id is None:
                 continue
             for page in reader.pages:
-                texto = page.extract_text() or ""
+                texto = limpar_texto(page.extract_text() or "")
                 if not texto.strip():
                     continue
                 for chunk in chunker(texto):

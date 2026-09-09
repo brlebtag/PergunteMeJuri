@@ -1,4 +1,5 @@
 # Cria banco de dados
+import os
 from sqlalchemy import create_engine, text
 
 URL_BANCO = "postgresql+psycopg2://postgres:root@localhost:5432/pergunteme_juri"
@@ -10,6 +11,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS documents (
 	id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    "name" VARCHAR(255) NOT NULL,
 	absolute_path TEXT NOT NULL UNIQUE,
 	metadata JSONB DEFAULT '{}',
 	created_at TIMESTAMPTZ DEFAULT now()
@@ -37,7 +39,7 @@ CREATE INDEX idx_chunks_search ON document_chunks USING gin(search_vector);
 """
 
 def main() -> None:
-    engine = create_engine(URL_BANCO, echo=True)
+    engine = create_engine(URL_BANCO, echo=os.getenv("SQL_ECHO") == "1")
     with engine.connect() as conn:
         conn.execute(text(BUILD_TABLES), {"lang": LANG})
         conn.commit()
