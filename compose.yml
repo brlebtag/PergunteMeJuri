@@ -10,6 +10,80 @@ services:
             POSTGRES_DB: ${POSTGRES_DB:-pergunteme_juri}
         volumes:
             - pergunteme_juri:/var/lib/postgresql/data
+        healthcheck:
+            # Os demais servicos so sobem quando o banco aceita conexao, senao
+            # o checkpointer falha logo no lifespan da API.
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-pergunteme_juri}"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+
+    hrag:
+        build:
+            context: .
+            dockerfile: backend/Dockerfile
+        container_name: hrag_mcp
+        command: python -m backend.hrag
+        ports:
+            - "${MCP_PORT:-8000}:8000"
+        environment:
+            POSTGRES_HOST: postgres
+            POSTGRES_PORT: 5432
+            POSTGRES_USER: ${POSTGRES_USER:-postgres}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-root}
+            POSTGRES_DB: ${POSTGRES_DB:-pergunteme_juri}
+            # Dentro do container o servidor precisa escutar em todas as
+            # interfaces; "localhost" so aceitaria conexoes do proprio container.
+            MCP_HOST: 0.0.0.0
+            RAG_LIMIT: ${RAG_LIMIT:-10}
+        volumes:
+            - modelos_cache:/app/backend/modelos_cache
+            - ./backend/leis:/app/backend/leis:ro
+        depends_on:
+            postgres:
+                condition: service_healthy
+        healthcheck:
+            # A imagem slim nao tem curl; um socket TCP basta para saber que o
+            # servidor MCP ja terminou de carregar o modelo e esta escutando.
+            test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8000), 2)"]
+            interval: 5s
+            timeout: 5s
+            retries: 30
+            # A primeira execucao baixa o modelo de embedding (~500MB).
+            start_period: 180s
+
+    api:
+        build:
+            context: .
+            dockerfile: backend/Dockerfile
+        container_name: juri_api
+        ports:
+            - "${API_PORT:-8080}:8080"
+        environment:
+            POSTGRES_HOST: postgres
+            POSTGRES_PORT: 5432
+            POSTGRES_USER: ${POSTGRES_USER:-postgres}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-root}
+            POSTGRES_DB: ${POSTGRES_DB:-pergunteme_juri}
+            MCP_URL: http://hrag:8000/mcp
+            # O Ollama roda na maquina hospedeira (precisa da GPU), nao aqui.
+            # Nome de variavel proprio de proposito: o compose interpola do
+            # .env do host, onde OLLAMA_BASE_URL vale "localhost" -- que dentro
+            # do container apontaria para o proprio container.
+            OLLAMA_BASE_URL: ${OLLAMA_URL_DOCKER:-http://host.docker.internal:11434}
+            OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+            LLM_NUM_CTX: ${LLM_NUM_CTX:-8192}
+            LLM_REASONING: ${LLM_REASONING:-0}
+            CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+        extra_hosts:
+            # No Docker Desktop host.docker.internal ja existe; no Linux, nao.
+            - "host.docker.internal:host-gateway"
+        depends_on:
+            postgres:
+                condition: service_healthy
+            hrag:
+                condition: service_healthy
 
 volumes:
     pergunteme_juri:
+    modelos_cache:

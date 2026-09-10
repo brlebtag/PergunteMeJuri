@@ -12,7 +12,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS documents (
 	id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     "name" VARCHAR(255) NOT NULL,
-	absolute_path TEXT NOT NULL UNIQUE,
+	source_path TEXT NOT NULL UNIQUE,
 	metadata JSONB DEFAULT '{}',
 	created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -27,15 +27,15 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_chunks_embedding ON document_chunks
+CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON document_chunks
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
 ALTER TABLE document_chunks
-    ADD COLUMN search_vector tsvector
+    ADD COLUMN IF NOT EXISTS search_vector tsvector
     GENERATED ALWAYS AS (to_tsvector(:lang, content)) STORED;
 
-CREATE INDEX idx_chunks_search ON document_chunks USING gin(search_vector);
+CREATE INDEX IF NOT EXISTS idx_chunks_search ON document_chunks USING gin(search_vector);
 """
 
 def main() -> None:

@@ -31,7 +31,7 @@ def docs_folder() -> Path:
 def doc_file(name: str) -> str:
     return os.path.join(DOC_FOLDER, name)
 
-def docs_files() -> List[(str, str)]:
+def docs_files() -> list[tuple[str, str]]:
     return [(f.name, doc_file(f.name)) for f in docs_folder().rglob("*.pdf") if f.is_file()]
 
 # Categorias Unicode descartadas do texto extraido do PDF:
@@ -60,25 +60,33 @@ def build_embedding_model() -> SentenceTransformer:
 def build_chunker(tokenizer, chunk_size = CHUNK_SIZE):
     return semchunk.chunkerify(tokenizer, chunk_size)
 
-def search_doc(conn: Connection, absolute_path: str) -> int:
-    sql = text("""SELECT id FROM documents WHERE absolute_path = :absolute_path;""")
-    data = {"absolute_path": absolute_path}
+def caminho_relativo(caminho: str) -> str:
+    """Chave de deduplicacao estavel entre host e container.
+
+    O caminho absoluto muda conforme onde o pipeline roda (C:\\... no Windows,
+    /app/... no container), o que faria a mesma lei ser cadastrada duas vezes.
+    """
+    return Path(caminho).name
+
+def search_doc(conn: Connection, source_path: str) -> int:
+    sql = text("""SELECT id FROM documents WHERE source_path = :source_path;""")
+    data = {"source_path": source_path}
     ret = conn.execute(sql, data)
     row = ret.fetchone()
     return row[0] if row else None
 
-def insert_doc(conn: Connection, name: str, absolute_path: str) -> int:
+def insert_doc(conn: Connection, name: str, source_path: str) -> int:
     try:
-        sql = text("""INSERT INTO documents ("name", absolute_path)
-            VALUES (:name, :absolute_path) RETURNING id;""")
-        data = {"name": name, "absolute_path": absolute_path}
+        sql = text("""INSERT INTO documents ("name", source_path)
+            VALUES (:name, :source_path) RETURNING id;""")
+        data = {"name": name, "source_path": source_path}
         ret = conn.execute(sql, data)
         row = ret.fetchone()
         conn.commit()
         return row[0]
     except IntegrityError:
         conn.rollback()
-        return search_doc(conn, absolute_path)
+        return search_doc(conn, source_path)
 
 def to_vector_literal(embedding) -> str:
     """pgvector espera o formato textual '[0.1,0.2,...]'."""
@@ -114,7 +122,7 @@ def precompute():
     with engine.connect() as conn:
         for (name, filename) in docs_files():
             reader = PdfReader(filename)
-            doc_id = insert_doc(conn, name.replace(".pdf", ""), filename)
+            doc_id = insert_doc(conn, name.replace(".pdf", ""), caminho_relativo(filename))
             if doc_id is None:
                 continue
             for page in reader.pages:

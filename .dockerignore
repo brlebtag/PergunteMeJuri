@@ -1,0 +1,8 @@
+venv/
+frontend/
+.git/
+.claude/
+**/__pycache__/
+**/*.pyc
+backend/modelos_cache/
+.env
