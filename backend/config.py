@@ -72,6 +72,14 @@ MCP_HOST = _texto("MCP_HOST", "localhost")
 MCP_PORT = _inteiro("MCP_PORT", 8000)
 MCP_URL = _texto("MCP_URL", f"http://{MCP_HOST}:{MCP_PORT}/mcp")
 
+# --- API HTTP (api.py) ----------------------------------------------------
+API_HOST = _texto("API_HOST", "0.0.0.0")
+API_PORT = _inteiro("API_PORT", 8080)
+# Origens liberadas no CORS, separadas por virgula. "*" libera todas.
+CORS_ORIGINS = [
+    o.strip() for o in _texto("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()
+]
+
 # --- LLM (juri.py) --------------------------------------------------------
 OLLAMA_BASE_URL = _texto("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = _texto("OLLAMA_MODEL", "qwen3:8b")

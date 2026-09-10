@@ -210,19 +210,20 @@ async def main():
         await responder(graph, "E em quais casos essa nacionalidade é perdida?", "1")
 
 
-def executar(corotina):
-    """Roda a corotina num event loop compativel com o psycopg async.
+def fabrica_de_loop() -> asyncio.AbstractEventLoop:
+    """Event loop compativel com o psycopg async.
 
     No Windows o padrao do asyncio e o ProactorEventLoop, que o psycopg3 nao
     suporta em modo assincrono. Qualquer processo que abra o checkpointer --
-    inclusive o servidor ASGI, mais adiante -- precisa do SelectorEventLoop.
+    o servidor ASGI inclusive -- precisa do SelectorEventLoop.
     """
     if sys.platform == "win32":
-        return asyncio.run(
-            corotina,
-            loop_factory=lambda: asyncio.SelectorEventLoop(selectors.SelectSelector()),
-        )
-    return asyncio.run(corotina)
+        return asyncio.SelectorEventLoop(selectors.SelectSelector())
+    return asyncio.new_event_loop()
+
+
+def executar(corotina):
+    return asyncio.run(corotina, loop_factory=fabrica_de_loop)
 
 
 if __name__ == "__main__":
