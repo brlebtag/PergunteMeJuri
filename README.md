@@ -255,6 +255,5 @@ compose.yml               Postgres + hrag + api
 
 - **O modelo ainda generaliza além do contexto.** Mesmo instruído a usar apenas os trechos recuperados, ele ocasionalmente acrescenta conclusões que não estão no texto legal. Mitigações naturais seriam exigir citação do artigo em cada afirmação, ou um nó de verificação confrontando a resposta com o contexto.
 - **A reescrita custa uma chamada extra ao LLM** em toda pergunta de acompanhamento.
-- **O corpus é pequeno** — apenas a Constituição Federal. A qualidade das respostas depende diretamente do que estiver em `backend/leis/`.
 - **Sem autenticação.** Qualquer um com acesso à porta 8080 conversa com a API e lê qualquer `thread_id`.
 - **Não é aconselhamento jurídico.** É um projeto de estudo sobre RAG.
