@@ -1,6 +1,8 @@
 # Chatbot responsavel por responder perguntas relacionadas as leis brasileiras
 import asyncio
 import json
+import selectors
+import sys
 from contextlib import asynccontextmanager
 
 from langchain_ollama import ChatOllama
@@ -25,6 +27,14 @@ llm = ChatOllama(model=OLLAMA_MODEL,
     reasoning=LLM_REASONING,
     base_url=OLLAMA_BASE_URL)
 
+# Reescrita e uma tarefa mecanica: temperatura zero para nao inventar termos
+# que nao estao na conversa.
+llm_reescrita = ChatOllama(model=OLLAMA_MODEL,
+    temperature=0,
+    num_ctx=LLM_NUM_CTX,
+    reasoning=False,
+    base_url=OLLAMA_BASE_URL)
+
 client = MultiServerMCPClient({
     "rag": {
         "transport": "streamable_http",       # ou "stdio"
@@ -42,6 +52,23 @@ Abaixo segue o contexto legal e a pergunta feita:
 {contexto}
 """
 
+PROMPT_REESCRITA = """Você reescreve perguntas para um sistema de busca em leis brasileiras.
+Reescreva a última pergunta do usuário como uma pergunta independente, que faça
+sentido sozinha, resolvendo pronomes e referências implícitas com base no histórico.
+Mantenha os termos jurídicos usados na conversa. Não responda à pergunta.
+Reformule apenas a pergunta, em uma linha, sem aspas nem explicações, finalizando com ponto de interrogação (?).
+
+Histórico da conversa:
+{historico}
+
+Pergunta: {pergunta}
+"""
+
+# Quanto do historico entra na reescrita. As respostas do modelo sao longas, e
+# so o inicio delas importa para resolver o assunto em discussao.
+REESCRITA_MAX_MENSAGENS = 4
+REESCRITA_MAX_CHARS = 400
+
 rag_tool = None
 
 
@@ -54,6 +81,7 @@ class EstadoJuri(MessagesState):
     Aqui ele e sobrescrito a cada `retrieve`.
     """
     contexto: str
+    consulta: str
 
 
 async def carregar_rag_tool():
@@ -85,9 +113,35 @@ def extrair_chunks(result) -> list[dict]:
     return [chunk for chunk in result if isinstance(chunk, dict)]
 
 
+async def rewrite_node(state: EstadoJuri):
+    """Transforma a pergunta em uma consulta que se sustenta sozinha.
+
+    "E em quais casos ela e perdida?" nao recupera nada util; o RAG precisa de
+    "casos de perda da nacionalidade brasileira". Na primeira pergunta nao ha o
+    que resolver, entao pulamos a chamada ao LLM.
+    """
+    mensagens = state["messages"]
+    pergunta = mensagens[-1].content
+    if len(mensagens) <= 1:
+        return {"consulta": pergunta}
+
+    anteriores = mensagens[-(REESCRITA_MAX_MENSAGENS + 1):-1]
+    historico = "\n".join(
+        f"{'Usuário' if isinstance(m, HumanMessage) else 'Assistente'}: "
+        f"{m.content[:REESCRITA_MAX_CHARS]}"
+        for m in anteriores
+    )
+    resposta = await llm_reescrita.ainvoke([
+        HumanMessage(content=PROMPT_REESCRITA.format(historico=historico, pergunta=pergunta))
+    ])
+    consulta = resposta.content.strip().strip('"').splitlines()[0] if resposta.content.strip() else ""
+    # Se o modelo devolver algo vazio ou absurdo, a pergunta original e um
+    # fallback pior porem seguro.
+    return {"consulta": consulta or pergunta}
+
+
 async def retrieve_node(state: EstadoJuri):
-    question = state["messages"][-1].content
-    result = await rag_tool.ainvoke({"query": question})
+    result = await rag_tool.ainvoke({"query": state["consulta"]})
     chunks = extrair_chunks(result)
     if not chunks:
         contexto = "Nenhum trecho de lei relevante foi encontrado."
@@ -107,10 +161,12 @@ async def generate_node(state: EstadoJuri):
 
 def construir_workflow() -> StateGraph:
     workflow = StateGraph(EstadoJuri)
+    workflow.add_node("rewrite", rewrite_node)
     workflow.add_node("retrieve", retrieve_node)
     workflow.add_node("generate", generate_node)
 
-    workflow.add_edge(START, "retrieve")
+    workflow.add_edge(START, "rewrite")
+    workflow.add_edge("rewrite", "retrieve")
     workflow.add_edge("retrieve", "generate")
     workflow.add_edge("generate", END)
     return workflow
@@ -154,5 +210,20 @@ async def main():
         await responder(graph, "E em quais casos essa nacionalidade é perdida?", "1")
 
 
+def executar(corotina):
+    """Roda a corotina num event loop compativel com o psycopg async.
+
+    No Windows o padrao do asyncio e o ProactorEventLoop, que o psycopg3 nao
+    suporta em modo assincrono. Qualquer processo que abra o checkpointer --
+    inclusive o servidor ASGI, mais adiante -- precisa do SelectorEventLoop.
+    """
+    if sys.platform == "win32":
+        return asyncio.run(
+            corotina,
+            loop_factory=lambda: asyncio.SelectorEventLoop(selectors.SelectSelector()),
+        )
+    return asyncio.run(corotina)
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    executar(main())
