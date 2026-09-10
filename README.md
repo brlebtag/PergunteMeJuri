@@ -257,3 +257,4 @@ compose.yml               Postgres + hrag + api
 - **A reescrita custa uma chamada extra ao LLM** em toda pergunta de acompanhamento.
 - **Sem autenticação.** Qualquer um com acesso à porta 8080 conversa com a API e lê qualquer `thread_id`.
 - **Não é aconselhamento jurídico.** É um projeto de estudo sobre RAG.
+- **Não tem guardrails robustos.** Não está no escopo desse estudo aplicar guardrails robustos. Foi aplicado apenas no prompt que pode ser ignorado pela LLM.
