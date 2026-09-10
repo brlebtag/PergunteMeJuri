@@ -9,16 +9,21 @@ from sqlalchemy.orm import sessionmaker, Session
 from sentence_transformers import SentenceTransformer
 from pydantic import BaseModel, Field
 
-MODEL = "intfloat/multilingual-e5-small"
-PREFIX_QUERY = "query: "
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modelos_cache")
-URL_BANCO = "postgresql+psycopg2://postgres:root@localhost:5432/pergunteme_juri"
-LIMIT = 10
+from backend.config import (
+    CACHE_DIR,
+    EMBEDDING_MODEL,
+    LIMIT,
+    MCP_HOST,
+    MCP_PORT,
+    PREFIX_QUERY,
+    SQL_ECHO,
+    URL_BANCO,
+)
 
-engine = create_engine(URL_BANCO, echo=os.getenv("SQL_ECHO") == "1")
+engine = create_engine(URL_BANCO, echo=SQL_ECHO)
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
 mcp = FastMCP("HybridRAG")
-model = SentenceTransformer(MODEL, cache_folder=CACHE_DIR)
+model = SentenceTransformer(EMBEDDING_MODEL, cache_folder=CACHE_DIR)
 
 class DocumentChunk(BaseModel):
     """A Chunk of information extracted from a document"""
@@ -168,4 +173,4 @@ def list_laws() -> list[str]:
     return []
 
 if __name__ == "__main__":
-    mcp.run(transport="http", host="localhost", port=8000)
+    mcp.run(transport="http", host=MCP_HOST, port=MCP_PORT)

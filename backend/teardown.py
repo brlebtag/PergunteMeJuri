@@ -2,7 +2,7 @@
 import os
 from sqlalchemy import create_engine, text
 
-URL_BANCO = "postgresql+psycopg2://postgres:root@localhost:5432/pergunteme_juri"
+from backend.config import SQL_ECHO, URL_BANCO
 
 TEARDOWN_TABLES = """
 DROP TABLE IF EXISTS document_chunks;
@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS documents;
 """
 
 def main() -> None:
-    engine = create_engine(URL_BANCO, echo=os.getenv("SQL_ECHO") == "1")
+    engine = create_engine(URL_BANCO, echo=SQL_ECHO)
     with engine.connect() as conn:
         conn.execute(text(TEARDOWN_TABLES))
         conn.commit()

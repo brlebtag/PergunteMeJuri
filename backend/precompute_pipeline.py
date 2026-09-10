@@ -14,20 +14,22 @@ from sentence_transformers import SentenceTransformer
 from PyPDF2 import PdfReader
 from pathlib import Path
 
-URL_BANCO = "postgresql+psycopg2://postgres:root@localhost:5432/pergunteme_juri"
-MODEL = "intfloat/multilingual-e5-small"
-PREFIX_PASSAGE = "passage: "
-PREFIX_QUERY = "query: "
-CHUNK_SIZE = 256
-OVERLAP = 0.15
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modelos_cache")
-DOC_FOLDER= "leis"
+from backend.config import (
+    CACHE_DIR,
+    CHUNK_SIZE,
+    DOC_FOLDER,
+    EMBEDDING_MODEL,
+    OVERLAP,
+    PREFIX_PASSAGE,
+    SQL_ECHO,
+    URL_BANCO,
+)
 
 def docs_folder() -> Path:
-    return Path(os.path.join(os.path.dirname(os.path.abspath(__file__)), DOC_FOLDER))
+    return Path(DOC_FOLDER)
 
 def doc_file(name: str) -> str:
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), DOC_FOLDER, name)
+    return os.path.join(DOC_FOLDER, name)
 
 def docs_files() -> List[(str, str)]:
     return [(f.name, doc_file(f.name)) for f in docs_folder().rglob("*.pdf") if f.is_file()]
@@ -50,10 +52,10 @@ def limpar_texto(texto: str) -> str:
     return ESPACOS_RE.sub(" ", texto).strip()
 
 def build_tokenizer():
-    return AutoTokenizer.from_pretrained(MODEL, cache_dir=CACHE_DIR)
+    return AutoTokenizer.from_pretrained(EMBEDDING_MODEL, cache_dir=CACHE_DIR)
 
 def build_embedding_model() -> SentenceTransformer:
-    return SentenceTransformer(MODEL, cache_folder=CACHE_DIR)
+    return SentenceTransformer(EMBEDDING_MODEL, cache_folder=CACHE_DIR)
 
 def build_chunker(tokenizer, chunk_size = CHUNK_SIZE):
     return semchunk.chunkerify(tokenizer, chunk_size)
@@ -107,7 +109,7 @@ def store_chunk(conn: Connection, model: SentenceTransformer, doc_id: int, chunk
 def precompute():
     tokenizer = build_tokenizer()
     chunker = build_chunker(tokenizer)
-    engine = create_engine(URL_BANCO, echo=os.getenv("SQL_ECHO") == "1")
+    engine = create_engine(URL_BANCO, echo=SQL_ECHO)
     model = build_embedding_model()
     with engine.connect() as conn:
         for (name, filename) in docs_files():

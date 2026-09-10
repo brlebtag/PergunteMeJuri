@@ -9,21 +9,25 @@ from langgraph.graph import MessagesState, StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
-llm = ChatOllama(model="qwen3:8b",
-    temperature=0.7,
-    # O padrao do Ollama (4096) cobre prompt + geracao. Com ~2.5k tokens de
-    # contexto legal mais o raciocinio do modelo, a janela desliza e descarta
-    # justamente o inicio do prompt, silenciosamente.
-    num_ctx=8192,
-    # O qwen3 gera um bloco <think> que e descartado da saida: custa tempo e
-    # espaco na janela sem aparecer na resposta.
-    reasoning=False,
-    base_url="http://localhost:11434")
+from backend.config import (
+    LLM_NUM_CTX,
+    LLM_REASONING,
+    LLM_TEMPERATURE,
+    MCP_URL,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
+)
+
+llm = ChatOllama(model=OLLAMA_MODEL,
+    temperature=LLM_TEMPERATURE,
+    num_ctx=LLM_NUM_CTX,
+    reasoning=LLM_REASONING,
+    base_url=OLLAMA_BASE_URL)
 
 client = MultiServerMCPClient({
     "rag": {
         "transport": "streamable_http",       # ou "stdio"
-        "url": "http://localhost:8000/mcp",   # endereço do seu servidor RAG
+        "url": MCP_URL,
     }
 })
 

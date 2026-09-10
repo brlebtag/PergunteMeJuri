@@ -2,7 +2,7 @@
 import os
 from sqlalchemy import create_engine, text
 
-URL_BANCO = "postgresql+psycopg2://postgres:root@localhost:5432/pergunteme_juri"
+from backend.config import SQL_ECHO, URL_BANCO
 
 LANG="portuguese"
 
@@ -39,7 +39,7 @@ CREATE INDEX idx_chunks_search ON document_chunks USING gin(search_vector);
 """
 
 def main() -> None:
-    engine = create_engine(URL_BANCO, echo=os.getenv("SQL_ECHO") == "1")
+    engine = create_engine(URL_BANCO, echo=SQL_ECHO)
     with engine.connect() as conn:
         conn.execute(text(BUILD_TABLES), {"lang": LANG})
         conn.commit()
