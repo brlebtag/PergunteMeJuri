@@ -48,6 +48,10 @@ URL_BANCO = _texto(
 )
 SQL_ECHO = _booleano("SQL_ECHO")
 
+# O checkpointer do LangGraph fala psycopg3 direto e nao entende o dialeto do
+# SQLAlchemy, entao a mesma URL vai sem o sufixo "+psycopg2".
+CHECKPOINT_URL = _texto("CHECKPOINT_URL", URL_BANCO.replace("+psycopg2", ""))
+
 # --- Embeddings e chunking ------------------------------------------------
 EMBEDDING_MODEL = _texto("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
 CACHE_DIR = str(BASE_DIR / "modelos_cache")
