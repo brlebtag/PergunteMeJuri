@@ -1,0 +1,178 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # Um push novo cancela a execucao anterior do mesmo branch.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instala dependencias
+        run: npm ci
+
+      - name: Compila (tsc + vite build)
+        run: npm run build
+
+  backend:
+    name: Backend (smoke test)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: root
+          POSTGRES_DB: pergunteme_juri
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pergunteme_juri"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: pergunteme_juri
+      MCP_HOST: 127.0.0.1
+      MCP_PORT: 8000
+      MCP_URL: http://127.0.0.1:8000/mcp
+      API_PORT: 8080
+      # O Ollama nao roda no CI (precisa de GPU e de ~5GB de modelo). Nada
+      # neste job chama o LLM: /perguntar fica de fora do smoke test.
+      OLLAMA_BASE_URL: http://127.0.0.1:11434
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cache do modelo de embedding
+        uses: actions/cache@v4
+        with:
+          path: backend/modelos_cache
+          key: modelos-${{ hashFiles('backend/config.py') }}
+
+      - name: Instala dependencias
+        # torch cpu-only primeiro: a variante padrao traz CUDA (~2.5GB) sem
+        # nenhuma utilidade aqui.
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+
+      - name: Verifica que todos os modulos compilam
+        run: python -m compileall -q backend
+
+      - name: Cria o schema
+        run: python -m backend.setup
+
+      - name: Schema e idempotente
+        run: python -m backend.setup
+
+      - name: Sobe o servidor MCP
+        run: |
+          python -m backend.hrag > hrag.log 2>&1 &
+          for i in $(seq 1 60); do
+            python -c "import socket; socket.create_connection(('127.0.0.1', 8000), 2)" 2>/dev/null && exit 0
+            sleep 5
+          done
+          echo "servidor MCP nao subiu"; cat hrag.log; exit 1
+
+      - name: Busca hibrida responde com a base vazia
+        # Sem leis indexadas o resultado e uma lista vazia -- o que importa
+        # aqui e que as duas consultas SQL e a fusao RRF nao quebrem.
+        run: |
+          python - <<'PY'
+          import backend.hrag as h
+          with h.SessionLocal() as s:
+              assert h.keyword_search(s, "cidadania") == []
+              assert h.semantic_search(s, "cidadania") == []
+              assert h.hybrid_search(s, "cidadania") == []
+          print("busca hibrida ok")
+          PY
+
+      - name: O grafo do agente compila
+        run: |
+          python - <<'PY'
+          from backend.juri import EstadoJuri, construir_workflow
+          nos = {n for n in construir_workflow().compile().get_graph().nodes if not n.startswith("__")}
+          assert nos == {"rewrite", "retrieve", "generate"}, nos
+          assert "contexto" in EstadoJuri.__annotations__
+          print("grafo ok")
+          PY
+
+      - name: Sobe a API
+        run: |
+          python -m backend.api > api.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8080/saude > /dev/null && exit 0
+            sleep 5
+          done
+          echo "API nao subiu"; cat api.log; exit 1
+
+      - name: Endpoints respondem
+        run: |
+          test "$(curl -sf http://127.0.0.1:8080/saude)" = '{"status":"ok"}'
+          test "$(curl -sf http://127.0.0.1:8080/leis)" = '{"leis":[]}'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/conversas/inexistente)" = "404"
+          echo "endpoints ok"
+
+      - name: Logs em caso de falha
+        if: failure()
+        run: |
+          echo "--- hrag ---"; cat hrag.log || true
+          echo "--- api ---"; cat api.log || true
+
+  docker:
+    name: Imagens do compose
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Valida o compose
+        # Precisa do .env: o compose interpola as variaveis a partir dele.
+        run: |
+          cp .env.example .env
+          docker compose config > /dev/null
+          echo "compose valido"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Constroi a imagem do backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

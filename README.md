@@ -1,5 +1,7 @@
 # PergunteMeJuri
 
+[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+
 Chatbot jurídico que responde perguntas sobre a legislação brasileira usando **RAG híbrido** — busca lexical e semântica combinadas — sobre PDFs de leis. Roda **inteiramente local**: nenhum dado sai da máquina e nenhuma API paga é usada.
 
 O projeto foi construído para exercitar, ponta a ponta, as peças de um sistema RAG de verdade: indexação, recuperação híbrida, agente com memória, API em streaming e interface de chat.
